@@ -58,8 +58,8 @@ npx wrangler deploy --dry-run
 ### From CI
 
 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) does the same
-thing on every push to `main`: `npm ci`, `npm run build`, `npm test`, then
-`wrangler deploy`, then a `/health` curl. Manual runs are available through
+thing on every push to `main`: `npm ci`, a credentials check, `npm run build`,
+`npm test`, then `wrangler deploy`, then a `/health` curl. Manual runs are available through
 **Actions → Deploy → Run workflow**.
 
 It runs in the `production` GitHub Environment, which is where the two secrets
@@ -68,13 +68,83 @@ unattended.
 
 | Secret | What it is |
 | --- | --- |
-| `CLOUDFLARE_API_TOKEN` | An account API token with the **Edit Cloudflare Workers** template. Nothing broader — the Worker has no bindings, so the token needs no KV, R2 or D1 scope. |
-| `CLOUDFLARE_ACCOUNT_ID` | The account ID from the Cloudflare dashboard sidebar (`npx wrangler whoami` also prints it). Only strictly needed when the token can see more than one account, but setting it removes the ambiguity. |
+| `CLOUDFLARE_API_TOKEN` | An API token carrying **Account → Workers Scripts → Edit**, scoped under **Account Resources** to the account ID below. That single permission is what `wrangler deploy` spends; the Worker has no bindings, so nothing about KV, R2, D1 or any zone belongs on it. Add **User → User Details → Read** too — no deploy needs it, but wrangler falls back to `whoami` when a call fails, and without it the diagnostics can't say who the token is. |
+| `CLOUDFLARE_ACCOUNT_ID` | The account ID from the Cloudflare dashboard sidebar (`npx wrangler whoami` also prints it). Only strictly needed when the token can see more than one account, but setting it removes the ambiguity — and it must be the *same* account the token is scoped to, or every call 403s. |
 
 Deploys are serialised by a `concurrency` group and deliberately **not**
 cancelled in flight: a half-run `wrangler deploy` is worse than a redundant one.
 The build step is not optional in CI either — `src/generated/` is gitignored, so
 a checkout has nothing to bundle until it runs.
+
+The job checks both secrets against the Cloudflare API before it builds
+anything. `wrangler deploy` is the first step that would otherwise touch them,
+and it is four minutes of `npm ci`, build and test away — long enough that a
+credentials problem arrives looking like a deploy problem.
+
+### When the deploy fails to authenticate
+
+The symptom is a `wrangler deploy` that ends in:
+
+```
+✘ [ERROR] A request to the Cloudflare API (/accounts/<id>/workers/services/mcp-memes) failed.
+  Authentication error [code: 10000]
+```
+
+Code 10000 on that path means one thing: **the token is not allowed to write
+Workers on that account.** Wrangler then runs `whoami` to help, and that output
+is where the trail goes cold, because it asks about permissions the deploy never
+needed:
+
+- `Are you missing the User->User Details->Read permission?` and
+  `Unable to get membership roles` are the *diagnostic* failing, not the deploy.
+  Granting them makes the message useful; it does not make the deploy work.
+- If that output still prints the account **name** — not just the ID — the token
+  is live, unexpired, and scoped to the right account, since listing accounts is
+  itself a token-authenticated call. Rule out expiry and the wrong account ID
+  and go straight to the permission.
+
+Issue the token at
+[dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens)
+→ **Create Token** → **Create Custom Token**:
+
+| Field | Value |
+| --- | --- |
+| Permissions | `Account` · `Workers Scripts` · **Edit** |
+| Permissions | `User` · `User Details` · **Read** |
+| Account Resources | Include · the one account this Worker deploys to |
+| Zone Resources | *none* — the Worker is on `workers.dev` and claims no route |
+| Client IP Filtering | leave empty — GitHub-hosted runners have no stable egress IP |
+| TTL | no expiry, or a calendar reminder; an expired token fails the same way a revoked one does |
+
+The **Edit Cloudflare Workers** template also works and is the faster path, but
+it is a moving target maintained for the general case: it grants KV, R2, D1 and
+zone scopes this Worker has no use for, and it has at times not carried the
+`User Details` read that makes wrangler's diagnostics legible. The custom token
+above is the minimum that deploys this repository.
+
+Then paste it into **Settings → Environments → production → Secrets**, and check
+these while you are there:
+
+- **The `production` environment is the one that matters.** A repository-level
+  secret of the same name is shadowed by the environment's, so an old token
+  sitting in the environment will be used no matter what you fix at repo level.
+- **Paste without a trailing newline or space.** The token is sent verbatim in
+  an `Authorization` header; whitespace makes it fail as if it were revoked.
+- **`CLOUDFLARE_ACCOUNT_ID` must be the account the token is scoped to.** A
+  token issued under a second account on the same login is the quiet version of
+  this bug: it authenticates, and then 403s on an account it cannot see.
+
+To confirm a token before trusting CI with it, ask the API the same question the
+deploy asks. `200` means the permission is there:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -H "authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+  "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts"
+```
+
+A `403` there with a `200` from `/client/v4/user/tokens/verify` is exactly the
+failure above: a valid token without `Workers Scripts:Edit`.
 
 ### Verify
 

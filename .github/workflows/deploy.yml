@@ -36,6 +36,39 @@ jobs:
 
       - run: npm ci
 
+      # `wrangler deploy` is the only step that touches the credentials, and it
+      # is four minutes of install, build and test away — far enough that an
+      # expired or under-scoped token reports itself as a deploy failure rather
+      # than as a credentials failure. Ask the same account endpoint the deploy
+      # asks, first, so the error names the actual problem. See
+      # docs/deployment.md for what the token needs.
+      - name: Check Cloudflare credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is empty. Both are secrets of the 'production' environment; a repository-level secret of the same name is shadowed by it."
+            exit 1
+          fi
+          api=https://api.cloudflare.com/client/v4
+          code() { curl -sS -o /dev/null -w '%{http_code}' -H "authorization: Bearer $CLOUDFLARE_API_TOKEN" "$1"; }
+          # Workers Scripts:Edit implies read, so a 200 here is the permission
+          # the deploy needs, on the account the deploy will target.
+          if [ "$(code "$api/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts")" = "200" ]; then
+            echo "token can write Workers on $CLOUDFLARE_ACCOUNT_ID"
+            exit 0
+          fi
+          # Only reached on failure, and only to split the two causes apart.
+          # /user/tokens/verify answers for user tokens; an account-owned token
+          # 4xxs there, which reads the same as a dead one, hence the wording.
+          if [ "$(code "$api/user/tokens/verify")" = "200" ]; then
+            echo "::error::The API token is valid but cannot write Workers on account $CLOUDFLARE_ACCOUNT_ID. It needs Account -> Workers Scripts -> Edit, with Account Resources including that account. See docs/deployment.md."
+          else
+            echo "::error::Cloudflare rejected the API token itself — expired, revoked, pasted with stray whitespace, or scoped to a different account than CLOUDFLARE_ACCOUNT_ID. See docs/deployment.md."
+          fi
+          exit 1
+
       # Same gates as CI, re-run here rather than trusted from the PR run:
       # main can differ from any branch that was checked.
       - run: npm run build
