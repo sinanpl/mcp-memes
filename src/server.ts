@@ -59,11 +59,10 @@ export type ServerOptions = {
   /** The bundled editor HTML. */
   widgetHtml: string;
   /**
-   * Origin (optionally with a path prefix) the server is reachable at, e.g.
-   * `https://sinan.pl/mcp-memes`. When given, the server icons are advertised as
-   * URLs under it — `<base>/icon.png` and `<base>/icon.svg` — so the host must
-   * serve those two paths. Omitted over stdio, where inline data URIs are used
-   * instead.
+   * Origin the server is reachable at. When given, the server icons are
+   * advertised as URLs under it — `<base>/icon.png` and `<base>/icon.svg` — so
+   * the host must serve those two paths. Omitted over stdio, where inline data
+   * URIs are used instead.
    */
   iconBaseUrl?: string;
   /**

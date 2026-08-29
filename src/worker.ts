@@ -27,31 +27,16 @@ const LANDING = `<!doctype html>
 <h1>mcp-memes</h1>
 <p>A situation-aware meme editor, served over the Model Context Protocol.</p>
 <p>MCP endpoint: <code>POST /mcp</code> &middot; health: <code>GET /health</code></p>
-<p>Also reachable at <a href="https://sinan.pl/mcp-memes">sinan.pl/mcp-memes</a>.</p>
 <p><a href="https://github.com/sinanpl/mcp-memes">Source on GitHub</a></p>`;
-
-/**
- * The vanity front door, sinan.pl/mcp-memes, is a Netlify 200-proxy that rewrites
- * the path, so requests through it arrive here as plain `/mcp` and this prefix
- * is never seen in production. It is kept for the other shape of front door —
- * one that forwards the path unchanged — because such a rule would otherwise
- * ask for `/mcp-memes/mcp` and get a 404 that looks like a dead server.
- *
- * (A plain 301/302 never gets this far at all: clients turn a redirected POST
- * into a GET, and most refuse a cross-origin redirect for an MCP endpoint. The
- * front door has to be a proxy — docs/deployment.md.)
- */
-const PREFIX = /^\/mcp-memes(?=\/|$)/;
 
 export default {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    const prefix = PREFIX.exec(url.pathname)?.[0] ?? "";
-    const pathname = url.pathname.slice(prefix.length) || "/";
+    const { pathname } = url;
 
     // Whatever address this request came in on is the one the host can fetch an
     // icon from, so the advertised icons are built from it rather than hardcoded.
-    const iconBaseUrl = url.origin + prefix;
+    const iconBaseUrl = url.origin;
 
     // Every path arrives here, so the routing lives in code.
     if (pathname === "/mcp") {

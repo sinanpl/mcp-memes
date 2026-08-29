@@ -19,9 +19,8 @@ Four routes, and nothing else:
 | `GET /favicon.ico` | The same PNG at the path a host asks for when it has a URL and nothing else. |
 | `GET /` | A one-paragraph landing page. |
 
-Each also answers under a `/mcp-memes` path prefix. The front door in front of
-this Worker does not need that — it rewrites the path itself — so the prefix
-routing is there for the other shape of proxy; see [The vanity URL](#the-vanity-url).
+There is no custom domain in front of this. The `workers.dev` address is the
+address; see [Why no vanity URL](#why-no-vanity-url).
 
 Everything the Worker needs at runtime is a compile-time value. A V8 isolate has
 no filesystem, so the catalogue, the editor HTML, the Anton font and both server
@@ -35,61 +34,6 @@ The Worker itself has no bindings, no environment variables and no runtime
 secrets — there is nothing to configure on it beyond an account. Deploying *to*
 it does need credentials, but those live in CI and never reach the isolate; see
 [From CI](#from-ci) below.
-
-## The vanity URL
-
-`https://sinan.pl/mcp-memes` is a front door on the blog onto this Worker. The
-blog is a Quarto site on Netlify, and the rule lives in its `_redirects`:
-
-```
-/mcp-memes           https://mcp-memes.polatoglu-sinan.workers.dev/mcp     200
-/mcp-memes/health    https://mcp-memes.polatoglu-sinan.workers.dev/health  200
-```
-
-Three things about that shape are worth keeping straight, because two of them
-have already cost an afternoon.
-
-**The endpoint is `/mcp-memes`, not `/mcp-memes/mcp`.** The rule maps the bare
-path straight onto the Worker's `/mcp`, so the usual `…/mcp` suffix is already
-spent. `https://sinan.pl/mcp-memes/mcp` matches no rule, falls through to the
-blog's own 404 page, and a client reports it as *couldn't reach the server* —
-or, once it starts hunting for an OAuth server it will never find, as an
-authentication error. That is the URL to paste into a connector:
-
-```
-https://sinan.pl/mcp-memes
-```
-
-**`200` is a proxy, not a redirect.** Netlify fetches the Worker server-side, so
-the `POST` keeps its method and its JSON-RPC body. A `301` or `302` would not:
-clients re-issue a redirected POST as a GET, which arrives bodiless and earns
-the Worker's `405`, and many refuse a cross-origin redirect for a tool endpoint
-outright. A proxy also keeps the address stable, so nothing downstream has to
-know the `.workers.dev` name.
-
-**No splat, so only the mapped paths exist.** `/mcp-memes/icon.png` is not
-proxied and does not need to be: the icons are advertised at the address the
-request arrived on, which under this proxy is the Worker's own origin (the
-Worker sees its `.workers.dev` host, not `sinan.pl`), and that origin serves
-them directly.
-
-One limit that comes with the proxy: Netlify caps a proxied response at 26
-seconds. `handleMcpRequest` gives up at 8, so the Worker's own deadline is
-always the one that fires first.
-
-To check the front door, ask it the question a client asks — a `HEAD` or a `GET`
-proves nothing here, since the failure mode is specific to `POST`:
-
-```bash
-curl -sS -X POST https://sinan.pl/mcp-memes \
-  -H 'content-type: application/json' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | head -c 200
-```
-
-A JSON-RPC result means the proxy is passing POSTs through. HTML is the blog's
-404 page (wrong path, or the rule is not published — Netlify only sees
-`_redirects` after a `quarto publish`). A `405` means something turned the POST
-into a GET.
 
 ## The icons
 
@@ -105,9 +49,8 @@ showing a grey letter "M".
 | `src/worker.ts`, `src/http.ts` | `<base>/icon.png`, `<base>/icon.svg` | A host that draws connectors in a web page fetches the icon as an image, and a remote `data:` image is dropped by that page's CSP. |
 | `src/stdio.ts` | inline `data:` URIs | A stdio server has no origin to serve a URL from, and the host reads the response itself. |
 
-`<base>` is built from the address the request actually arrived on, path prefix
-included, so the icon is fetched back through the same door the client came in
-by. Nothing is hardcoded and a new domain needs no code change.
+`<base>` is built from the address the request actually arrived on rather than
+hardcoded, so a future custom domain needs no code change.
 
 **Before connecting** — a connector that has been added but not connected, which
 is the state the pane spends most of its life in — there is no initialize
@@ -273,6 +216,29 @@ model three tools, not four.
 npx wrangler deployments list
 npx wrangler rollback [deployment-id]
 ```
+
+## Why no vanity URL
+
+`sinan.pl/mcp-memes` was tried and dropped. The blog is a Quarto site on Netlify,
+and a Netlify 200-proxy in front of the Worker carried the protocol correctly at
+the HTTP level — verified with curl: `POST` returned a full `tools/list` result,
+`OPTIONS` returned `204` with the CORS headers, `GET` returned the Worker's own
+`405`. Claude's connector could still not add it, failing at the first
+*Connect to the server* step while the `workers.dev` address worked.
+
+That was not run to ground. The unexplained part is what the connector does
+beyond a plain POST, and one candidate is visible in the proxied response
+headers: Netlify reported `cache-status: "Netlify Edge"; fwd=miss` on the POST —
+a cache lookup, not a skip — with `netlify-vary: query`, meaning a key that
+ignores the method and body, and an `age: 1` on a `405`. The Worker sends no
+`cache-control` on `/mcp`, so an edge cache in front of it is free to replay a
+response to a request that never asked for it.
+
+The cost of chasing that was not worth a prettier URL for a demo endpoint, so
+the extra hop is gone: no proxy rule on the blog, no path-prefix routing in
+`src/worker.ts`. If a custom domain is ever wanted, the cheap version is a
+Cloudflare custom domain on the Worker itself — which needs the zone's
+nameservers on Cloudflare — rather than a second CDN in the path.
 
 ## Limits
 

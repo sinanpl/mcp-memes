@@ -51,19 +51,4 @@ describe("worker routes", () => {
     ]);
   });
 
-  it("answers the same routes under the vanity path prefix, icons included", async () => {
-    expect((await fetchWorker("/mcp-memes/health")).status).toBe(200);
-    expect((await fetchWorker("/mcp-memes/icon.svg")).headers.get("content-type")).toBe("image/svg+xml");
-
-    const response = await fetchWorker("/mcp-memes/mcp", initialize);
-    const body = (await response.json()) as { result: { serverInfo: { icons: { src: string }[] } } };
-    // The prefix stays on the icon URLs, or they would miss the front door.
-    expect(body.result.serverInfo.icons[0].src).toBe(
-      "https://mcp-memes.polatoglu-sinan.workers.dev/mcp-memes/icon.png",
-    );
-  });
-
-  it("does not swallow a path that merely starts with the same letters", async () => {
-    expect((await fetchWorker("/mcp-memes-elsewhere/health")).status).toBe(404);
-  });
 });

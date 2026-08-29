@@ -24,11 +24,11 @@ describe("identity", () => {
   it("advertises fetchable URLs when the host has an origin", async () => {
     // Claude's connector pane paints the icon in a page whose CSP drops a data:
     // image from a remote server, so an HTTP host serves the bytes instead.
-    const client = await connect({ iconBaseUrl: "https://sinan.pl/mcp-memes/" });
+    const client = await connect({ iconBaseUrl: "https://memes.example/" });
     const icons = client.getServerVersion()?.icons ?? [];
     expect(icons.map((i) => i.src)).toEqual([
-      "https://sinan.pl/mcp-memes/icon.png",
-      "https://sinan.pl/mcp-memes/icon.svg",
+      "https://memes.example/icon.png",
+      "https://memes.example/icon.svg",
     ]);
     expect(icons[0].mimeType).toBe("image/png");
   });

@@ -11,8 +11,7 @@ five already captioned. You tweak the text and copy the image out.
 The editor is the deliverable — not a paragraph describing memes it might make.
 
 ```
-MCP endpoint:  POST https://sinan.pl/mcp-memes
-               POST https://mcp-memes.polatoglu-sinan.workers.dev/mcp
+MCP endpoint:  POST https://mcp-memes.polatoglu-sinan.workers.dev/mcp
 ```
 
 ## What is interesting about it
@@ -134,15 +133,8 @@ of the model's tool list on hosts that would otherwise show it.
 Point an MCP client at the HTTP endpoint:
 
 ```
-https://sinan.pl/mcp-memes
+https://mcp-memes.polatoglu-sinan.workers.dev/mcp
 ```
-
-No `/mcp` on the end: that address is a Netlify proxy on the blog which maps the
-bare path onto the Worker's `/mcp`, so the suffix is already spent and
-`…/mcp-memes/mcp` reaches the blog's 404 page instead. The Worker also answers
-directly at `https://mcp-memes.polatoglu-sinan.workers.dev/mcp`. Both are the
-same deployment; see [docs/deployment.md](docs/deployment.md#the-vanity-url) for
-why the front door is a proxy rather than a redirect.
 
 This endpoint is unauthenticated and runs on Cloudflare's free plan, which stops
 serving at 100,000 requests a day. It is a demo over a public catalogue of public
