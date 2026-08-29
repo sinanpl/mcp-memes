@@ -15,11 +15,13 @@ Four routes, and nothing else:
 | --- | --- |
 | `POST /mcp` | The MCP endpoint. Stateless: one server per request, one JSON body out. |
 | `GET /health` | `{"status":"ok"}` |
-| `GET /icon.png`, `GET /icon.svg` | The server icon, cached for a year and CORS-open. A host that draws the connector list in a web page fetches the icon like any other image; see [The icons](#the-icons). |
+| `GET /icon.png`, `GET /icon.svg` | The server icon, cached for a year and CORS-open — what `serverInfo.icons` points at. See [The icons](#the-icons). |
+| `GET /favicon.ico` | The same PNG at the path a host asks for when it has a URL and nothing else. |
 | `GET /` | A one-paragraph landing page. |
 
-Each of them also answers under a `/mcp-memes` path prefix, which is what makes
-the vanity URL work — [below](#the-vanity-url).
+Each also answers under a `/mcp-memes` path prefix. The front door in front of
+this Worker does not need that — it rewrites the path itself — so the prefix
+routing is there for the other shape of proxy; see [The vanity URL](#the-vanity-url).
 
 Everything the Worker needs at runtime is a compile-time value. A V8 isolate has
 no filesystem, so the catalogue, the editor HTML, the Anton font and both server
@@ -36,61 +38,102 @@ it does need credentials, but those live in CI and never reach the isolate; see
 
 ## The vanity URL
 
-`https://sinan.pl/mcp-memes/mcp` is a front door on the blog onto the same
-Worker. Two things decide whether it works:
+`https://sinan.pl/mcp-memes` is a front door on the blog onto this Worker. The
+blog is a Quarto site on Netlify, and the rule lives in its `_redirects`:
 
-**It cannot be a 301 or a 302.** MCP is POST-only. Those two statuses let a
-client rewrite the redirected request as a `GET`, which arrives without the
-JSON-RPC body and gets the Worker's `405`, and most clients do exactly that. The
-front door has to preserve the method and body: a **308** (permanent, method-preserving),
-or better, a proxy/rewrite rule that forwards the request rather than bouncing
-the client. A proxy also keeps the address the client sees stable, which matters
-for the icons below.
+```
+/mcp-memes           https://mcp-memes.polatoglu-sinan.workers.dev/mcp     200
+/mcp-memes/health    https://mcp-memes.polatoglu-sinan.workers.dev/health  200
+```
 
-**The path prefix has to survive.** A forwarding rule that does not rewrite the
-path hands the Worker `/mcp-memes/mcp`, not `/mcp`. `src/worker.ts` strips a
-leading `/mcp-memes` before routing, so both shapes work and the blog side can
-be either. `/mcp-memes-elsewhere` is not stripped — only a whole path segment
-counts.
+Three things about that shape are worth keeping straight, because two of them
+have already cost an afternoon.
 
-Whatever the rule is, it must cover the whole prefix and not just the one path:
-`/mcp-memes/icon.png` has to reach the Worker too, or the connector pane loses
-its icon again.
+**The endpoint is `/mcp-memes`, not `/mcp-memes/mcp`.** The rule maps the bare
+path straight onto the Worker's `/mcp`, so the usual `…/mcp` suffix is already
+spent. `https://sinan.pl/mcp-memes/mcp` matches no rule, falls through to the
+blog's own 404 page, and a client reports it as *couldn't reach the server* —
+or, once it starts hunting for an OAuth server it will never find, as an
+authentication error. That is the URL to paste into a connector:
 
-To check the front door end to end, ask it the question a client asks:
+```
+https://sinan.pl/mcp-memes
+```
+
+**`200` is a proxy, not a redirect.** Netlify fetches the Worker server-side, so
+the `POST` keeps its method and its JSON-RPC body. A `301` or `302` would not:
+clients re-issue a redirected POST as a GET, which arrives bodiless and earns
+the Worker's `405`, and many refuse a cross-origin redirect for a tool endpoint
+outright. A proxy also keeps the address stable, so nothing downstream has to
+know the `.workers.dev` name.
+
+**No splat, so only the mapped paths exist.** `/mcp-memes/icon.png` is not
+proxied and does not need to be: the icons are advertised at the address the
+request arrived on, which under this proxy is the Worker's own origin (the
+Worker sees its `.workers.dev` host, not `sinan.pl`), and that origin serves
+them directly.
+
+One limit that comes with the proxy: Netlify caps a proxied response at 26
+seconds. `handleMcpRequest` gives up at 8, so the Worker's own deadline is
+always the one that fires first.
+
+To check the front door, ask it the question a client asks — a `HEAD` or a `GET`
+proves nothing here, since the failure mode is specific to `POST`:
 
 ```bash
-curl -sS -X POST https://sinan.pl/mcp-memes/mcp \
+curl -sS -X POST https://sinan.pl/mcp-memes \
   -H 'content-type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | head -c 200
 ```
 
-A JSON-RPC result means the POST survived. HTML, a `405`, or an empty body means
-the redirect turned it into a GET.
+A JSON-RPC result means the proxy is passing POSTs through. HTML is the blog's
+404 page (wrong path, or the rule is not published — Netlify only sees
+`_redirects` after a `quarto publish`). A `405` means something turned the POST
+into a GET.
 
 ## The icons
 
-The server advertises its icon in the `initialize` response (`serverInfo.icons`),
-and how it does that depends on the entrypoint:
+A host asks for the server's mark at two different moments, and they are not
+served by the same mechanism. Getting this wrong is what left the connector pane
+showing a grey letter "M".
+
+**Once connected**, the host has the `initialize` response and reads
+`serverInfo.icons`:
 
 | Entrypoint | `icons` | Why |
 | --- | --- | --- |
-| `src/worker.ts`, `src/http.ts` | `<base>/icon.png`, `<base>/icon.svg` | A host that shows connectors in a web page fetches the icon as an image. A `data:` image from a remote server does not survive that page's CSP, so it renders as nothing — which is what a connector pane with no icon is. |
+| `src/worker.ts`, `src/http.ts` | `<base>/icon.png`, `<base>/icon.svg` | A host that draws connectors in a web page fetches the icon as an image, and a remote `data:` image is dropped by that page's CSP. |
 | `src/stdio.ts` | inline `data:` URIs | A stdio server has no origin to serve a URL from, and the host reads the response itself. |
 
-`<base>` is built from the address the request actually came in on, prefix
-included — `https://sinan.pl/mcp-memes/icon.png` for a request through the blog,
-`https://mcp-memes.polatoglu-sinan.workers.dev/icon.png` for a direct one — so
-the icon is always fetched back through the same door the client came in by.
-Nothing is hardcoded, and a new custom domain needs no code change.
+`<base>` is built from the address the request actually arrived on, path prefix
+included, so the icon is fetched back through the same door the client came in
+by. Nothing is hardcoded and a new domain needs no code change.
 
-The bytes are the same baked constants in both cases (`src/icons.ts` decodes
-them; `assets/icon.svg` is still the one source). To confirm a deployment serves
-them:
+**Before connecting** — a connector that has been added but not connected, which
+is the state the pane spends most of its life in — there is no initialize
+response and therefore no `icons` at all. The host has a URL and nothing else,
+so the only mark it can find is the origin's favicon. That is why the Worker
+serves `/favicon.ico` (the same 256x256 PNG) and why the landing page carries a
+`<link rel="icon">`.
+
+Honest about what is verified: the `data:`-versus-URL reasoning is CSP mechanics
+and holds generally, but *which* of these two a given pane actually reads has not
+been observed from inside this repo — the pre-connection letter is the only
+symptom available. Serving both costs ~10 lines and covers either answer. If a
+future connector pane still shows a letter after a connection succeeds, the
+thing to check is whether `serverInfo.icons` is read at all, not these paths.
+
+The bytes are the same baked constants throughout (`src/icons.ts` decodes them;
+`assets/icon.svg` is still the one source). To confirm a deployment serves them:
 
 ```bash
 curl -sSI https://mcp-memes.polatoglu-sinan.workers.dev/icon.png | head -3
+curl -sSI https://mcp-memes.polatoglu-sinan.workers.dev/favicon.ico | head -3
 ```
+
+Both should be `200` with an `image/png` content type. A connector added before
+those existed can hold a stale mark; removing and re-adding it is the way to see
+the current state.
 
 ## Deploying
 

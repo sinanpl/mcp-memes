@@ -101,7 +101,10 @@ the renderer. Both are baked in and advertised as `icons` on the server's
 `<base>/icon.svg` on an HTTP host, because a connector pane fetches the icon
 into a web page and a remote `data:` image does not survive its CSP. An HTTP
 entrypoint therefore has to serve those two paths (`src/icons.ts`) and pass the
-address the request arrived on back in as `iconBaseUrl`. Do not swap in Trollface or a redraw of it —
+address the request arrived on back in as `iconBaseUrl`. It also serves
+`/favicon.ico`: before a host connects there is no initialize response to read,
+so the origin's favicon is the only mark it can find, and a connector pane spends
+most of its life in that state. Do not swap in Trollface or a redraw of it —
 [assets/ICON.md](assets/ICON.md) records why, with sources.
 
 ## Style

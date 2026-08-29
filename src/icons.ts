@@ -1,12 +1,25 @@
 /**
  * The server icon as bytes, for HTTP hosts that serve it at a URL.
  *
- * A host that shows the server in a web page (Claude's connector pane) fetches
- * the icon like any other image, so it has to exist at an https:// address; the
- * inline data: URIs in src/server.ts only get as far as hosts that render the
- * initialize response themselves. Both entrypoints that have an origin —
- * src/worker.ts and src/http.ts — serve these two paths, and pass the base URL
- * back into `createServer` so the advertised `icons` point here.
+ * Three paths, because a host asks for the icon in two different ways at two
+ * different moments:
+ *
+ * - `/icon.png` and `/icon.svg` are what the `icons` in the initialize response
+ *   point at (src/server.ts), so they only reach a host that has already
+ *   connected. A URL rather than the inline `data:` URI because a pane that
+ *   draws the server in a web page fetches the icon like any other image, and a
+ *   remote `data:` image is what a page CSP drops.
+ * - `/favicon.ico` is the one a host can ask for *before* connecting, when it
+ *   has no initialize response to read: it has a URL and nothing else, so the
+ *   only mark it can find is the origin's favicon. Without it there is nothing
+ *   to show but a letter — which is what Claude's connector pane shows for an
+ *   unconnected server. Whether that pane looks for a favicon is not something
+ *   this repo can verify from the outside; serving one is ten lines and the
+ *   only lever available before a connection exists.
+ *
+ * `.ico` carries PNG bytes. Every browser since IE11 accepts a PNG at that
+ * path, and shipping a real ICO would mean a second encoder for one 256x256
+ * image already baked in.
  *
  * The bytes come from the same baked constants the data: URIs use, so there is
  * still one source for the icon: assets/icon.svg and its rendered PNG.
@@ -30,7 +43,12 @@ export type IconAsset = { body: ArrayBuffer; contentType: string };
  */
 export const ICON_CACHE_CONTROL = "public, max-age=31536000, immutable";
 
+const png = (): IconAsset => ({ body: bytes(ICON_PNG_BASE64), contentType: "image/png" });
+
 export const ICON_ASSETS: Record<string, IconAsset> = {
-  [ICON_PATHS.png]: { body: bytes(ICON_PNG_BASE64), contentType: "image/png" },
+  [ICON_PATHS.png]: png(),
   [ICON_PATHS.svg]: { body: bytes(ICON_SVG_BASE64), contentType: "image/svg+xml" },
+  // Served as image/png, not image/vnd.microsoft.icon: the bytes are a PNG and
+  // saying otherwise only invites a stricter client to reject them.
+  "/favicon.ico": png(),
 };

@@ -22,6 +22,8 @@ const HTML = { "content-type": "text/html; charset=utf-8" };
 const LANDING = `<!doctype html>
 <meta charset="utf-8" />
 <title>mcp-memes</title>
+<link rel="icon" href="/icon.svg" type="image/svg+xml" />
+<link rel="icon" href="/icon.png" type="image/png" sizes="256x256" />
 <h1>mcp-memes</h1>
 <p>A situation-aware meme editor, served over the Model Context Protocol.</p>
 <p>MCP endpoint: <code>POST /mcp</code> &middot; health: <code>GET /health</code></p>
@@ -29,14 +31,15 @@ const LANDING = `<!doctype html>
 <p><a href="https://github.com/sinanpl/mcp-memes">Source on GitHub</a></p>`;
 
 /**
- * The vanity front door is sinan.pl/mcp-memes. A front door that *forwards*
- * rather than rewrites — a Cloudflare proxy rule, a reverse proxy — hands the
- * whole path through, prefix and all, so `/mcp-memes/mcp` has to route like
- * `/mcp`. Stripping it here rather than asking the blog to rewrite keeps both
- * addresses answering the same four routes.
+ * The vanity front door, sinan.pl/mcp-memes, is a Netlify 200-proxy that rewrites
+ * the path, so requests through it arrive here as plain `/mcp` and this prefix
+ * is never seen in production. It is kept for the other shape of front door —
+ * one that forwards the path unchanged — because such a rule would otherwise
+ * ask for `/mcp-memes/mcp` and get a 404 that looks like a dead server.
  *
- * (A plain 301/302 redirect never gets this far: clients turn a redirected POST
- * into a GET. The vanity URL has to be a 308 or a proxy — docs/deployment.md.)
+ * (A plain 301/302 never gets this far at all: clients turn a redirected POST
+ * into a GET, and most refuse a cross-origin redirect for an MCP endpoint. The
+ * front door has to be a proxy — docs/deployment.md.)
  */
 const PREFIX = /^\/mcp-memes(?=\/|$)/;
 

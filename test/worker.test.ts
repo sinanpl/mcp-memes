@@ -26,6 +26,22 @@ describe("worker routes", () => {
     expect([...bytes.slice(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
   });
 
+  it("serves a favicon, the only mark a host can find before it connects", async () => {
+    const response = await fetchWorker("/favicon.ico");
+    expect(response.status).toBe(200);
+    // PNG bytes at the .ico path: claiming image/vnd.microsoft.icon for a PNG
+    // only invites a stricter client to reject it.
+    expect(response.headers.get("content-type")).toBe("image/png");
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    expect([...bytes.slice(0, 4)]).toEqual([0x89, 0x50, 0x4e, 0x47]);
+  });
+
+  it("links the icon from the landing page, for a host that reads the HTML", async () => {
+    const html = await (await fetchWorker("/")).text();
+    expect(html).toContain('<link rel="icon" href="/icon.svg"');
+    expect(html).toContain('<link rel="icon" href="/icon.png"');
+  });
+
   it("points the icons at the address the request came in on", async () => {
     const response = await fetchWorker("/mcp", initialize);
     const body = (await response.json()) as { result: { serverInfo: { icons: { src: string }[] } } };
