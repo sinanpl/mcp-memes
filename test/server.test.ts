@@ -4,8 +4,8 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createServer } from "../src/server.js";
 
 /** A connected client/server pair over an in-memory transport, no build needed. */
-async function connect() {
-  const server = createServer({ widgetHtml: "<!-- test -->" });
+async function connect(options: { iconBaseUrl?: string } = {}) {
+  const server = createServer({ widgetHtml: "<!-- test -->", ...options });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: "test", version: "0" }, { capabilities: {} });
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
@@ -19,6 +19,18 @@ describe("identity", () => {
     // Both formats, both inline: a stdio server has no origin to serve a URL from.
     expect(icons.map((i) => i.mimeType)).toEqual(["image/svg+xml", "image/png"]);
     for (const icon of icons) expect(icon.src).toMatch(/^data:image\/[a-z+]+;base64,[A-Za-z0-9+/=]+$/);
+  });
+
+  it("advertises fetchable URLs when the host has an origin", async () => {
+    // Claude's connector pane paints the icon in a page whose CSP drops a data:
+    // image from a remote server, so an HTTP host serves the bytes instead.
+    const client = await connect({ iconBaseUrl: "https://sinan.pl/mcp-memes/" });
+    const icons = client.getServerVersion()?.icons ?? [];
+    expect(icons.map((i) => i.src)).toEqual([
+      "https://sinan.pl/mcp-memes/icon.png",
+      "https://sinan.pl/mcp-memes/icon.svg",
+    ]);
+    expect(icons[0].mimeType).toBe("image/png");
   });
 });
 

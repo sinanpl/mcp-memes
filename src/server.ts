@@ -21,20 +21,36 @@ export const PICKS = 5;
  * The mark a host shows next to the server. Without it Claude Desktop falls
  * back to the first letter of the name, which is a grey "M".
  *
- * Data URIs rather than https:// because the server has to identify itself the
- * same way over stdio as it does deployed, and a local stdio server has no
- * origin to serve an image from. Both formats are offered and the host picks:
- * the SVG stays crisp at any size, the PNG is there for hosts that will not
- * render SVG from an untrusted server. Together they cost ~9 KB of the
- * initialize response, paid once per connection.
+ * Two forms, chosen per host rather than per format:
+ *
+ * - `iconBaseUrl` given (any HTTP host — the Worker, `npm start`): the icons are
+ *   advertised as absolute `https://` URLs the host fetches itself. Claude's
+ *   connector pane renders the icon in a normal page, and a `data:` image from a
+ *   remote server does not survive that page's CSP — which is why the inline
+ *   form showed nothing there. PNG first: it is the form every host can paint.
+ * - No base URL (stdio): inline `data:` URIs, because a stdio server has no
+ *   origin to serve an image from and must still identify itself. Both formats
+ *   are offered and the host picks; together they cost ~9 KB of the initialize
+ *   response, paid once per connection.
  *
  * Drawn for this repo, deliberately not Trollface — assets/ICON.md has the
  * copyright reasoning.
  */
-const SERVER_ICONS = [
-  { src: `data:image/svg+xml;base64,${ICON_SVG_BASE64}`, mimeType: "image/svg+xml", sizes: ["any"] },
-  { src: `data:image/png;base64,${ICON_PNG_BASE64}`, mimeType: "image/png", sizes: ["256x256"] },
-];
+export const ICON_PATHS = { png: "/icon.png", svg: "/icon.svg" } as const;
+
+function serverIcons(baseUrl?: string) {
+  if (baseUrl) {
+    const base = baseUrl.replace(/\/+$/, "");
+    return [
+      { src: `${base}${ICON_PATHS.png}`, mimeType: "image/png", sizes: ["256x256"] },
+      { src: `${base}${ICON_PATHS.svg}`, mimeType: "image/svg+xml", sizes: ["any"] },
+    ];
+  }
+  return [
+    { src: `data:image/svg+xml;base64,${ICON_SVG_BASE64}`, mimeType: "image/svg+xml", sizes: ["any"] },
+    { src: `data:image/png;base64,${ICON_PNG_BASE64}`, mimeType: "image/png", sizes: ["256x256"] },
+  ];
+}
 
 /** Rendering is optional: hosts that only display the app never need it. */
 export type RenderMeme = (template: Template, texts: readonly string[]) => Promise<Buffer>;
@@ -42,6 +58,14 @@ export type RenderMeme = (template: Template, texts: readonly string[]) => Promi
 export type ServerOptions = {
   /** The bundled editor HTML. */
   widgetHtml: string;
+  /**
+   * Origin (optionally with a path prefix) the server is reachable at, e.g.
+   * `https://sinan.pl/mcp-memes`. When given, the server icons are advertised as
+   * URLs under it — `<base>/icon.png` and `<base>/icon.svg` — so the host must
+   * serve those two paths. Omitted over stdio, where inline data URIs are used
+   * instead.
+   */
+  iconBaseUrl?: string;
   /**
    * Server-side PNG renderer. When omitted, `render_meme` falls back to
    * returning a memegen image URL. The deployed Worker omits it — see
@@ -147,7 +171,7 @@ const LAYOUT_GUIDE = [
 
 export function createServer(options: ServerOptions): McpServer {
   const server = new McpServer(
-    { name: "mcp-memes-ts", version: "0.1.0", title: "Memes", icons: SERVER_ICONS },
+    { name: "mcp-memes-ts", version: "0.1.0", title: "Memes", icons: serverIcons(options.iconBaseUrl) },
     {
       capabilities: { resources: {}, tools: {}, prompts: {}, completions: {} },
       instructions:

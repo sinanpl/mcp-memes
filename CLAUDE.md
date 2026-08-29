@@ -97,7 +97,11 @@ at startup rather than on the first request. Keep it that way.
 `assets/icon.svg` is the source; `assets/icon-256.png` is committed generated
 output (`npm run render-icon`, needs `rsvg-convert`) so the build never needs
 the renderer. Both are baked in and advertised as `icons` on the server's
-`Implementation`. Do not swap in Trollface or a redraw of it —
+`Implementation` — inline `data:` URIs over stdio, and `<base>/icon.png` /
+`<base>/icon.svg` on an HTTP host, because a connector pane fetches the icon
+into a web page and a remote `data:` image does not survive its CSP. An HTTP
+entrypoint therefore has to serve those two paths (`src/icons.ts`) and pass the
+address the request arrived on back in as `iconBaseUrl`. Do not swap in Trollface or a redraw of it —
 [assets/ICON.md](assets/ICON.md) records why, with sources.
 
 ## Style

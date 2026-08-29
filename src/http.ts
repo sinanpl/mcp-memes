@@ -18,6 +18,7 @@ import express, { type Request, type Response } from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createServer, readWidgetHtml } from "./server.js";
 import { CORS_HEADERS } from "./web.js";
+import { ICON_ASSETS, ICON_CACHE_CONTROL } from "./icons.js";
 import { TEMPLATES } from "./catalogue.js";
 import { renderMeme } from "./render.js";
 
@@ -44,8 +45,19 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok", templates: TEMPLATES.length });
 });
 
+// The same two paths the Worker serves, so a host pointed at this entrypoint
+// can fetch the icons the initialize response advertises.
+for (const [path, icon] of Object.entries(ICON_ASSETS)) {
+  app.get(path, (_req, res) => {
+    res.type(icon.contentType).set("cache-control", ICON_CACHE_CONTROL).send(Buffer.from(icon.body));
+  });
+}
+
 async function handleMcp(req: Request, res: Response): Promise<void> {
-  const server = createServer({ widgetHtml, render: renderMeme });
+  // Built from the address this request came in on: behind a tunnel or a proxy
+  // it is not the one the process is listening on.
+  const iconBaseUrl = `${req.protocol}://${req.get("host") ?? `${HOST}:${PORT}`}`;
+  const server = createServer({ widgetHtml, iconBaseUrl, render: renderMeme });
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
