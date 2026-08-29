@@ -19,8 +19,8 @@ Four routes, and nothing else:
 | `GET /favicon.ico` | The same PNG at the path a host asks for when it has a URL and nothing else. |
 | `GET /` | A one-paragraph landing page. |
 
-There is no custom domain in front of this. The `workers.dev` address is the
-address; see [Why no vanity URL](#why-no-vanity-url).
+There is no custom domain in front of this; the `workers.dev` address is the
+address.
 
 Everything the Worker needs at runtime is a compile-time value. A V8 isolate has
 no filesystem, so the catalogue, the editor HTML, the Anton font and both server
@@ -216,29 +216,6 @@ model three tools, not four.
 npx wrangler deployments list
 npx wrangler rollback [deployment-id]
 ```
-
-## Why no vanity URL
-
-`sinan.pl/mcp-memes` was tried and dropped. The blog is a Quarto site on Netlify,
-and a Netlify 200-proxy in front of the Worker carried the protocol correctly at
-the HTTP level — verified with curl: `POST` returned a full `tools/list` result,
-`OPTIONS` returned `204` with the CORS headers, `GET` returned the Worker's own
-`405`. Claude's connector could still not add it, failing at the first
-*Connect to the server* step while the `workers.dev` address worked.
-
-That was not run to ground. The unexplained part is what the connector does
-beyond a plain POST, and one candidate is visible in the proxied response
-headers: Netlify reported `cache-status: "Netlify Edge"; fwd=miss` on the POST —
-a cache lookup, not a skip — with `netlify-vary: query`, meaning a key that
-ignores the method and body, and an `age: 1` on a `405`. The Worker sends no
-`cache-control` on `/mcp`, so an edge cache in front of it is free to replay a
-response to a request that never asked for it.
-
-The cost of chasing that was not worth a prettier URL for a demo endpoint, so
-the extra hop is gone: no proxy rule on the blog, no path-prefix routing in
-`src/worker.ts`. If a custom domain is ever wanted, the cheap version is a
-Cloudflare custom domain on the Worker itself — which needs the zone's
-nameservers on Cloudflare — rather than a second CDN in the path.
 
 ## Limits
 
