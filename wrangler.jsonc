@@ -1,0 +1,23 @@
+{
+  // Cloudflare Workers deploy target. See docs/deployment.md.
+  //
+  // `handleMcpRequest` in src/web.ts is a plain fetch handler, so the Worker
+  // entrypoint (src/worker.ts) is a thin adapter over the same core the stdio
+  // and local-dev entrypoints use.
+  //
+  // Deliberately no server-side renderer here. `render` is optional
+  // (src/server.ts), and without it `render_meme` returns a memegen URL while
+  // the editor keeps rendering in the browser. That keeps @napi-rs/canvas — a
+  // native Skia binary that V8 isolates cannot load — out of the bundle, and
+  // keeps image bytes off our egress entirely.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mcp-memes",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-08-29",
+  // The MCP SDK reaches for node builtins (crypto, events) even on the
+  // fetch-only path.
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  }
+}

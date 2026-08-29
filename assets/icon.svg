@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!--
+    The mcp-memes mark. Drawn for this repository; see assets/ICON.md for why it
+    is an original drawing and not the meme face you were probably expecting.
+
+    Six flat shapes, no gradients and no strokes below 38px at 512, because the
+    place it actually gets seen is a 16-24px row in a connector list. Checked at
+    32px: the bars stay separate and the mouth stays a curve.
+
+    assets/icon-256.png is rendered from this file — scripts/render-icon.mjs.
+  -->
+  <rect width="512" height="512" rx="112" fill="#FFD23F"/>
+  <rect x="100" y="92" width="312" height="52" rx="26" fill="#15161A"/>
+  <rect x="156" y="368" width="200" height="52" rx="26" fill="#15161A"/>
+  <circle cx="202" cy="208" r="22" fill="#15161A"/>
+  <circle cx="310" cy="208" r="22" fill="#15161A"/>
+  <path d="M196 268 a62 62 0 0 0 120 0" fill="none" stroke="#15161A" stroke-width="38" stroke-linecap="round"/>
+</svg>

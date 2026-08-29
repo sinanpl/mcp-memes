@@ -1,0 +1,64 @@
+name: Deploy
+
+# Every merge to main ships. The build step is not optional: src/generated/
+# is gitignored, so without it wrangler bundles nothing (see CLAUDE.md).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A queued deploy for an older commit is pointless once a newer one lands,
+# but never cancel one mid-flight — a half-run `wrangler deploy` is worse
+# than a redundant one.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+# Nothing here writes back to the repository. Cloudflare credentials come from
+# the environment secrets below, not from GITHUB_TOKEN.
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # Gate for the secrets, and the place to add a required reviewer later.
+    environment:
+      name: production
+      url: https://mcp-memes.polatoglu-sinan.workers.dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # Same gates as CI, re-run here rather than trusted from the PR run:
+      # main can differ from any branch that was checked.
+      - run: npm run build
+
+      - run: npm test
+
+      # `wrangler deploy`, not `npm run deploy`, only because the build above
+      # already ran — never invoke it without one (CLAUDE.md).
+      - name: Deploy to Cloudflare
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # Cheapest possible proof the isolate came up. Not a smoke test of /mcp:
+      # that would need the deploy to have propagated everywhere, and /health
+      # is enough to catch a Worker that fails to boot.
+      - name: Verify /health
+        run: |
+          for i in 1 2 3 4 5; do
+            if curl -fsS https://mcp-memes.polatoglu-sinan.workers.dev/health | grep -q '"ok"'; then
+              echo "healthy"; exit 0
+            fi
+            echo "attempt $i failed, retrying"; sleep 5
+          done
+          echo "health check never passed"; exit 1

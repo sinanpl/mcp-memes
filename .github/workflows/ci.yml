@@ -1,0 +1,34 @@
+name: CI
+
+# Pull requests only. Pushes to main are covered by deploy.yml, which re-runs
+# build and test before shipping — running both here would duplicate every
+# merge.
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # Bakes the widget and font into src/generated/, then compiles. Nothing
+      # below works without it: that directory is generated, not committed.
+      - run: npm run build
+
+      - run: npm test
+
+      # Catches a Worker that compiles under tsc but will not bundle for a V8
+      # isolate. No credentials needed.
+      - run: npx wrangler deploy --dry-run

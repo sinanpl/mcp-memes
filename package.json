@@ -1,0 +1,55 @@
+{
+  "name": "mcp-memes-ts",
+  "version": "0.1.0",
+  "description": "A situation-aware meme editor served over the Model Context Protocol.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "mcp-apps",
+    "memes",
+    "cloudflare-workers"
+  ],
+  "license": "MIT",
+  "author": "Sinan Polatoglu",
+  "private": true,
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sinanpl/mcp-memes.git"
+  },
+  "homepage": "https://github.com/sinanpl/mcp-memes#readme",
+  "bugs": "https://github.com/sinanpl/mcp-memes/issues",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node scripts/build-widget.mjs && tsc -p tsconfig.json",
+    "deploy": "npm run build && wrangler deploy",
+    "dev:worker": "wrangler dev",
+    "preview:widget": "node scripts/preview-widget.mjs",
+    "probe": "node scripts/probe.mjs",
+    "render-icon": "node scripts/render-icon.mjs",
+    "start": "node dist/src/http.js",
+    "start:stdio": "node dist/src/stdio.js",
+    "sync-templates": "tsx scripts/sync-templates.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.7.5",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@napi-rs/canvas": "^1.0.8",
+    "zod": "^4.5.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.4.0",
+    "esbuild": "^0.28.2",
+    "express": "^5.2.1",
+    "tsx": "^4.23.12",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.127.1",
+    "yaml": "^2.9.0"
+  }
+}
