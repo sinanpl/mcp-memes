@@ -9,13 +9,17 @@ Netlify target this project started on has been removed.
 which is a thin adapter over `handleMcpRequest` in [`src/web.ts`](../src/web.ts) —
 the same host-agnostic core the stdio and local-dev entrypoints use.
 
-Three routes, and nothing else:
+Four routes, and nothing else:
 
 | Route | Response |
 | --- | --- |
 | `POST /mcp` | The MCP endpoint. Stateless: one server per request, one JSON body out. |
 | `GET /health` | `{"status":"ok"}` |
+| `GET /icon.png`, `GET /icon.svg` | The server icon, cached for a year and CORS-open. A host that draws the connector list in a web page fetches the icon like any other image; see [The icons](#the-icons). |
 | `GET /` | A one-paragraph landing page. |
+
+Each of them also answers under a `/mcp-memes` path prefix, which is what makes
+the vanity URL work — [below](#the-vanity-url).
 
 Everything the Worker needs at runtime is a compile-time value. A V8 isolate has
 no filesystem, so the catalogue, the editor HTML, the Anton font and both server
@@ -29,6 +33,64 @@ The Worker itself has no bindings, no environment variables and no runtime
 secrets — there is nothing to configure on it beyond an account. Deploying *to*
 it does need credentials, but those live in CI and never reach the isolate; see
 [From CI](#from-ci) below.
+
+## The vanity URL
+
+`https://sinan.pl/mcp-memes/mcp` is a front door on the blog onto the same
+Worker. Two things decide whether it works:
+
+**It cannot be a 301 or a 302.** MCP is POST-only. Those two statuses let a
+client rewrite the redirected request as a `GET`, which arrives without the
+JSON-RPC body and gets the Worker's `405`, and most clients do exactly that. The
+front door has to preserve the method and body: a **308** (permanent, method-preserving),
+or better, a proxy/rewrite rule that forwards the request rather than bouncing
+the client. A proxy also keeps the address the client sees stable, which matters
+for the icons below.
+
+**The path prefix has to survive.** A forwarding rule that does not rewrite the
+path hands the Worker `/mcp-memes/mcp`, not `/mcp`. `src/worker.ts` strips a
+leading `/mcp-memes` before routing, so both shapes work and the blog side can
+be either. `/mcp-memes-elsewhere` is not stripped — only a whole path segment
+counts.
+
+Whatever the rule is, it must cover the whole prefix and not just the one path:
+`/mcp-memes/icon.png` has to reach the Worker too, or the connector pane loses
+its icon again.
+
+To check the front door end to end, ask it the question a client asks:
+
+```bash
+curl -sS -X POST https://sinan.pl/mcp-memes/mcp \
+  -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | head -c 200
+```
+
+A JSON-RPC result means the POST survived. HTML, a `405`, or an empty body means
+the redirect turned it into a GET.
+
+## The icons
+
+The server advertises its icon in the `initialize` response (`serverInfo.icons`),
+and how it does that depends on the entrypoint:
+
+| Entrypoint | `icons` | Why |
+| --- | --- | --- |
+| `src/worker.ts`, `src/http.ts` | `<base>/icon.png`, `<base>/icon.svg` | A host that shows connectors in a web page fetches the icon as an image. A `data:` image from a remote server does not survive that page's CSP, so it renders as nothing — which is what a connector pane with no icon is. |
+| `src/stdio.ts` | inline `data:` URIs | A stdio server has no origin to serve a URL from, and the host reads the response itself. |
+
+`<base>` is built from the address the request actually came in on, prefix
+included — `https://sinan.pl/mcp-memes/icon.png` for a request through the blog,
+`https://mcp-memes.polatoglu-sinan.workers.dev/icon.png` for a direct one — so
+the icon is always fetched back through the same door the client came in by.
+Nothing is hardcoded, and a new custom domain needs no code change.
+
+The bytes are the same baked constants in both cases (`src/icons.ts` decodes
+them; `assets/icon.svg` is still the one source). To confirm a deployment serves
+them:
+
+```bash
+curl -sSI https://mcp-memes.polatoglu-sinan.workers.dev/icon.png | head -3
+```
 
 ## Deploying
 

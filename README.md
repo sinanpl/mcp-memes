@@ -11,7 +11,8 @@ five already captioned. You tweak the text and copy the image out.
 The editor is the deliverable — not a paragraph describing memes it might make.
 
 ```
-MCP endpoint:  POST https://mcp-memes.polatoglu-sinan.workers.dev/mcp
+MCP endpoint:  POST https://sinan.pl/mcp-memes/mcp
+               POST https://mcp-memes.polatoglu-sinan.workers.dev/mcp
 ```
 
 ## What is interesting about it
@@ -62,6 +63,7 @@ One transport-agnostic core, three thin adapters:
 | [`src/layout.ts`](src/layout.ts) | The only copy of the layout rules. Pure; measurement injected. |
 | [`src/render.ts`](src/render.ts) | Server-side PNG rendering via `@napi-rs/canvas`. Optional — see below. |
 | [`src/catalogue.ts`](src/catalogue.ts) | Loads and validates `data/catalogue.json` at module load; builds the alias index. |
+| [`src/icons.ts`](src/icons.ts) | The server icon as bytes, for the entrypoints that serve it at a URL. |
 | [`src/web.ts`](src/web.ts) | A `Request -> Response` MCP endpoint. Stateless: one server per request, one JSON body out. |
 | [`src/worker.ts`](src/worker.ts) | Cloudflare Workers entrypoint. The deploy target. |
 | [`widget/main.ts`](widget/main.ts) | The editor. No framework, no CDN, one self-contained page. |
@@ -132,8 +134,15 @@ of the model's tool list on hosts that would otherwise show it.
 Point an MCP client at the HTTP endpoint:
 
 ```
-https://mcp-memes.polatoglu-sinan.workers.dev/mcp
+https://sinan.pl/mcp-memes/mcp
 ```
+
+That is a front door onto the Worker, which also answers directly at
+`https://mcp-memes.polatoglu-sinan.workers.dev/mcp`. Both addresses reach the
+same deployment; the Worker routes the vanity path prefix itself, so nothing has
+to be rewritten on the way in. What the front door must *not* be is a 301 or a
+302: MCP is POST-only, and those turn a POST into a GET. See
+[docs/deployment.md](docs/deployment.md#the-vanity-url).
 
 This endpoint is unauthenticated and runs on Cloudflare's free plan, which stops
 serving at 100,000 requests a day. It is a demo over a public catalogue of public
